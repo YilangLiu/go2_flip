@@ -24,6 +24,9 @@ import dial_mpc.envs as dial_envs
 from dial_mpc.utils.io_utils import get_example_path, load_dataclass_from_dict
 from dial_mpc.examples import examples
 from dial_mpc.core.dial_config import DialConfig
+import mujoco
+import mediapy as media
+import numpy as np 
 
 plt.style.use("science")
 
@@ -281,27 +284,6 @@ def main():
 
     timestamp = time.strftime("%Y%m%d-%H%M%S")
 
-    # plot rews_plan
-    # plt.plot(rews_plan)
-    # plt.savefig(os.path.join(dial_config.output_dir,
-    #             f"{timestamp}_rews_plan.pdf"))
-
-    # host webpage with flask
-    print("Processing rollout for visualization")
-    import flask
-
-    app = flask.Flask(__name__)
-    webpage = html.render(
-        env.sys.tree_replace({"opt.timestep": env.dt}), rollout, 1080, True
-    )
-
-    # save the html file
-    with open(
-        os.path.join(dial_config.output_dir, f"{timestamp}_brax_visualization.html"),
-        "w",
-    ) as f:
-        f.write(webpage)
-
     # save the rollout
     data = []
     xdata = []
@@ -323,11 +305,58 @@ def main():
     jnp.save(os.path.join(dial_config.output_dir, f"{timestamp}_states"), data)
     jnp.save(os.path.join(dial_config.output_dir, f"{timestamp}_predictions"), xdata)
 
-    @app.route("/")
-    def index():
-        return webpage
 
-    app.run(port=5000)
+    # Get MuJoCo model and data
+    mj_model = env.sys.mj_model
+    mj_data = mujoco.MjData(mj_model)
+
+    output_video_path =  importlib.resources.path(f"dial_mpc.results", "video.mp4")
+
+    with mujoco.Renderer(mj_model, 480, 640) as renderer:
+        camera_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_CAMERA, 'track')
+    
+        print("Starting visualization and recording...")
+        
+        # Record frames
+        frames = []
+        data = data[:, 1:20]
+        for i in range(data.shape[0]):
+            # Set robot state
+            mj_data.qpos[:] = data[i]
+            mj_data.qvel[:] = 0.0
+            
+            # Forward kinematics
+            mujoco.mj_forward(mj_model, mj_data)
+            
+            # Update viewer
+            renderer.update_scene(mj_data, camera=camera_id)
+            
+            # # Capture frame for video
+            if output_video_path:
+                # Get viewer image
+                img = renderer.render() 
+                if img is not None:
+                    # Convert RGBA to RGB for mediapy (remove alpha channel)
+                    img_rgb = img[:, :, :3]  # Take only RGB channels
+                    frames.append(img_rgb)
+        
+        print("Visualization completed!")
+        
+        # Save video using mediapy if frames were captured
+        if frames and output_video_path:
+            print(f"Saving video to {output_video_path}")
+            
+            # Convert frames to numpy array
+            frames_array = np.array(frames)
+            print(f"Video shape: {frames_array.shape}")
+            
+            # Save video using mediapy
+            media.write_video(output_video_path, frames_array, fps=30)
+            
+            print(f"Video saved successfully! Total frames: {len(frames)}")
+            print(f"Video saved at: {os.path.abspath(output_video_path)}")
+
+
 
 
 if __name__ == "__main__":
