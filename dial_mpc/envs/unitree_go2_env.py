@@ -930,7 +930,7 @@ class UnitreeGo2FlipBipedal(UnitreeGo2Env):
         
     
         # reward for enforcing terminal position and velocity 
-        reward_pos = -jnp.sum(jnp.square(weights[:19] * (self._init_q - pipeline_state.qpos)))
+        reward_pos = -jnp.sum(jnp.square(weights[:19] * (self._end_pose - pipeline_state.qpos))) # self._end_pose
         reward_vel = -jnp.sum(jnp.square(weights[19:] * pipeline_state.qvel)) # want final velocity to be zero
         
         reward = reward_pos + reward_vel + reward_action_rate * 0.001
@@ -952,8 +952,6 @@ class UnitreeGo2FlipBipedal(UnitreeGo2Env):
         state.info["step"] += 1
         state.info["rng"] = rng
         state.info["last_ctrl"] = ctrl
-
-        
 
         state = state.replace(
             pipeline_state=pipeline_state, obs=obs, reward=reward, done=done
